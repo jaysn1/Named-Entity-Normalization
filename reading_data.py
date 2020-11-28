@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+import UMLS_methods
 
 # specific for training data
 def reading_files(base_directory = "train"):
@@ -83,16 +84,88 @@ def reading_files_test(base_directory = "testing"):
     
     
 
-if __name__ == "__main__":
-    base_dir = "C:/Users/monil/Desktop/BMI 598 - NLP/Project/Clinical-Entity-Normalization/train"
-    # data, CUI, iCUI = reading_files(base_dir)
+# if __name__ == "__main__":
+base_dir = "C:/Users/Jaysn/Anaconda3/envs/NLP/Clinical-Entity-Normalization/train"
+data, CUI, iCUI = reading_files(base_dir)
 
+import pandas as pd
+from tqdm import tqdm
+def create_dataset(data):
+    """
+    This method will convert the text/notes to dataset by replacing one by one the mention by [MASK],
+    thus creating gigantic amount of data.
+
+    input:- data: list of dictionary (note, norm, filename)
+    output:- pandas dataframe with original sentence, masked sentence, mention, CUI 
+    """
+    dataset = []
+    sentence_pad = 200
+    a = 0
+    for d in data:
+        note = d['note']
+        norm = d['norm']
+        
+        for x in tqdm(norm):
+            a+= 1
+            _, cui = x[0], x[1]
+            for i in range(2, len(x), 2):
+                st, end = int(x[i]), int(x[i+1])
+                if st >= sentence_pad and len(note) - end >=sentence_pad:
+                    st_ind, end_ind = st - sentence_pad, end + sentence_pad
+                elif st >= sentence_pad:
+                    st_ind, end_ind = st - sentence_pad, len(note)
+                elif len(note) - end >= sentence_pad:
+                    st_ind, end_ind = 0, end + sentence_pad
+                else:
+                    st_ind, end_ind = 0, len(note)
+                
+                # while st_ch != " ":
+                #     st -= 1
+                # while end_ch != " ":
+                #     end += 1
+                
+                answers = UMLS_methods.find_mention_in_UMLS_partial_name(note[st:end+1])[:10]
+                answer_from_passage=""
+                answer_passage = " , ".join([answer['name'] for answer in answers])
+                ch_count = 0
+                CUIs = ",".join([answer['cui'] for answer in answers])
+                for answer in answers:
+                    if answer['cui'] == cui:
+                        answer_from_passage = answer['name']
+                        break
+                    ch_count += len(answer['name']) + 3
+                
+                dataset.append({
+                    'cui': cui,
+                    # 'original_sentence': note[st_ind:end_ind+1],
+                    'BertQAInput': "What does " + note[st:end+1] + " mean in: " + note[st_ind:end_ind] + " ?",
+                    # 'BertQAInput': note[st:end+1],
+                    # 'masked_sentence': note[:st] + "[MASK]" + note[end+1:],
+                    'mention': note[st:end+1],
+                    # 'questionLength': len(("What matches the concept in: " + note[st_ind:st] + " <concept> " + note[st:end+1] + " </concept> " + note[end+1:end_ind] + " ?").split(" ")),
+                    'answer_passage': answer_passage,
+                    'answer': answer_from_passage,
+                    'answer_start': ch_count,
+                    'answer_end': ch_count + len(answer_from_passage),
+                    'CUIs': CUIs
+                    # 'position_start': st,
+                    # 'position_end': end
+                    }
+                )
+            # break
+        # if a >= 100:
+        # break
+            # break
+        # break
+    return pd.DataFrame(dataset)
+dataset = create_dataset(data)
+dataset.to_csv("final_df.csv")
     # cui = "C0333307"
     # print("For CUI: ", cui)
     # print(CUI[cui])
     # for _, mention in CUI[cui]:
     #     print(mention, " : ", data[_]['note'][:100], end="\n\n")
 
-    test_base_dir = "C:/Users/monil/Desktop/BMI 598 - NLP/Project/Clinical-Entity-Normalization/testing"
-    test_data, _ = reading_files_test(test_base_dir)
-    print(test_data[0])
+    # test_base_dir = "C:/Users/monil/Desktop/BMI 598 - NLP/Project/Clinical-Entity-Normalization/testing"
+    # test_data, _ = reading_files_test(test_base_dir)
+    # print(test_data[0])
